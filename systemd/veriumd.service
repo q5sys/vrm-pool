@@ -1,0 +1,17 @@
+[Unit]
+Description=Verium Wallet
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/veriumd -daemon -conf=/etc/veriumd/verium.conf -pid=/run/veriumd/veriumd.pid
+RuntimeDirectory=veriumd
+User=veriumd
+Type=forking
+PIDFile=/run/veriumd/veriumd.pid
+Restart=on-failure
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
+Wants=network-online.target
+After=network.target network-online.target
