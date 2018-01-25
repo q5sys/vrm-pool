@@ -1,0 +1,322 @@
+#!/bin/bash
+set -euo
+
+
+# Script must be run as root.
+if [[ $EUID -ne 0 ]]; then
+   echo "This script must be run as root, exiting." 
+   exit 1
+fi
+
+
+##############
+# Parameters #
+##############
+
+ROOTDBPW=$1
+
+###########################
+# Setup the unix account. #
+###########################
+
+NIX_NAME="nomp"
+NIX_PASS=$(head /dev/urandom | tr -dc A-Za-z0-9 | head -c 128 ; echo '')
+
+SQL_PASS=$(head /dev/urandom | tr -dc A-Za-z0-9 | head -c 128 ; echo '')
+SQL_USER="nompuser"
+SQL_DB_NAME="nomp"
+
+
+echo "nomp user password: ${NIX_PASS}"
+
+{
+    echo "NIX USER ${NIX_PASS}"
+    echo "SQL USER ${SQL_USER}"
+    echo "SQL PASS ${SQL_PASS}"
+    echo "SQL DB   ${SQL_DB_NAME}"
+} > /root/nomp_passwords.txt
+
+
+echo "${NIX_NAME}":"${NIX_PASS}"::::/home/${NIX_NAME}:/bin/bash | newusers
+
+##########################
+# Configure the database #
+##########################
+
+mysql -u root --password="$ROOTDBPW" << QUERY
+    CREATE DATABASE $SQL_DB_NAME;
+    GRANT ALL PRIVILEGES ON $SQL_DB_NAME.* To '$SQL_USER'@'localhost' IDENTIFIED BY '$SQL_PASS';
+    FLUSH PRIVILEGES;
+    SHOW GRANTS FOR '$SQL_USER'@'localhost';
+QUERY
+
+
+################
+# Dependencies #
+################
+
+apt-get install redis-server -y
+
+############################
+# Install NVM for the user #
+############################
+
+
+su $NIX_NAME <<EOF
+
+touch ~/.bashrc
+curl https://raw.githubusercontent.com/creationix/nvm/v0.16.1/install.sh | sh
+source ~/.bashrc
+nvm install 0.10
+nvm use 0.10
+nvm alias default 0.10
+
+EOF
+
+########################
+# Get and install NOMP #
+########################
+
+su $NIX_NAME <<EOF
+
+source ~/.bashrc
+cd ~/
+git clone https://github.com/zone117x/node-open-mining-portal nomp
+cd nomp
+
+# We need to fix the request version, or it will fail.
+sed -i 's/"request": "\*",/"request": "2.69.0",/g' package.json
+
+npm update
+cp config_example.json config.json
+cp pool_configs/litecoin_example.json pool_configs/verium.json
+
+EOF
+
+#####################
+# Place the configs #
+#####################
+
+cat <<EOF > /home/$NIX_NAME/nomp/pool_configs/verium.json
+{
+    "enabled": true,
+    "coin": "verium.json",
+
+    "address": "fillinlater",
+
+    "paymentProcessing": {
+        "enabled": false,
+        "paymentInterval": 20,
+        "minimumPayment": 70,
+        "daemon": {
+            "host": "127.0.0.1",
+            "port": 19332,
+            "user": "testuser",
+            "password": "testpass"
+        }
+    },
+
+    "ports": {
+        "3332": {
+            "diff": 0.001,
+            "varDiff": {
+              "minDiff": 0.001,
+              "maxDiff": 0.03,
+              "targetTime": 100,
+              "retargetTime": 90,
+              "variancePercent": 30
+
+            }
+        },
+        "3333": {
+            "diff": 0.03,
+            "varDiff": {
+                "minDiff": 0.03,
+                "maxDiff": 0.2,
+                "targetTime": 100,
+                "retargetTime": 90,
+                "variancePercent": 30
+            }
+        },
+        "3334": {
+            "diff": 0.2,
+            "varDiff": {
+                "minDiff": 0.02,
+                "maxDiff": 0.06,
+                "targetTime": 100,
+                "retargetTime": 90,
+                "variancePercent": 30
+            }
+        }
+    },
+
+    "daemons": [
+        {
+            "host": "127.0.0.1",
+            "port": "33987",
+            "user": "veriumrpc",
+            "password": ""
+        }
+    ],
+
+    "p2p": {
+        "enabled": false,
+        "host": "127.0.0.1",
+        "port": 19333,
+        "disableTransactions": true
+    },
+
+    "mposMode": {
+        "enabled": true,
+        "host": "127.0.0.1",
+        "port": 3306,
+        "user": "$SQL_USER",
+        "password": "$SQL_PASS",
+        "database": "$SQL_DB_NAME",
+        "checkPassword": true,
+        "autoCreateWorker": false
+    }
+
+}
+
+EOF
+
+# Coin config
+
+cat <<EOF > /home/$NIX_NAME/nomp/coins/verium.json
+{
+    "name": "Verium",
+    "symbol": "VRM",
+    "algorithm": "scrypt-n",
+    "reward":"POS",
+    "timeTable": {
+      "1048576": 100
+    }
+}
+
+EOF
+
+
+cat <<EOT > /home/$NIX_NAME/nomp/config.json
+
+{
+    "logLevel": "debug",
+    "logColors": true,
+
+    "cliPort": 17117,
+
+    "clustering": {
+        "enabled": true,
+        "forks": "auto"
+    },
+
+    "defaultPoolConfigs": {
+        "blockRefreshInterval": 1000,
+        "jobRebroadcastTimeout": 55,
+        "connectionTimeout": 600,
+        "emitInvalidBlockHashes": false,
+        "validateWorkerUsername": true,
+        "tcpProxyProtocol": false,
+        "banning": {
+            "enabled": true,
+            "time": 600,
+            "invalidPercent": 50,
+            "checkThreshold": 500,
+            "purgeInterval": 300
+        },
+        "redis": {
+            "host": "127.0.0.1",
+            "port": 6379
+        }
+    },
+
+    "website": {
+        "enabled": false,
+        "host": "0.0.0.0",
+        "port": 80,
+        "stratumHost": "cryppit.com",
+        "stats": {
+            "updateInterval": 60,
+            "historicalRetention": 43200,
+            "hashrateWindow": 300
+        },
+        "adminCenter": {
+            "enabled": true,
+            "password": "password"
+        }
+    },
+
+    "redis": {
+        "host": "127.0.0.1",
+        "port": 6379
+    },
+
+    "switching": {
+        "switch1": {
+            "enabled": false,
+            "algorithm": "sha256",
+            "ports": {
+                "3333": {
+                    "diff": 10,
+                    "varDiff": {
+                        "minDiff": 16,
+                        "maxDiff": 512,
+                        "targetTime": 15,
+                        "retargetTime": 90,
+                        "variancePercent": 30
+                    }
+                }
+            }
+        },
+        "switch2": {
+            "enabled": false,
+            "algorithm": "scrypt",
+            "ports": {
+                "4444": {
+                    "diff": 10,
+                    "varDiff": {
+                        "minDiff": 16,
+                        "maxDiff": 512,
+                        "targetTime": 15,
+                        "retargetTime": 90,
+                        "variancePercent": 30
+                    }
+                }
+            }
+        },
+        "switch3": {
+            "enabled": false,
+            "algorithm": "x11",
+            "ports": {
+                "5555": {
+                    "diff": 0.001,
+                    "varDiff": g{
+                        "minDiff": 0.001,
+                        "maxDiff": 1,
+                        "targetTime": 15,
+                        "retargetTime": 60,
+                        "variancePercent": 30
+                    }
+                }
+            }
+        }
+    },
+
+    "profitSwitch": {
+        "enabled": false,
+        "updateInterval": 600,
+        "depth": 0.90,
+        "usePoloniex": true,
+        "useCryptsy": true,
+        "useMintpal": true,
+        "useBittrex": true
+    }
+}
+
+EOT
+
+
+echo "################################################################################"
+echo "# DO NOT FORGET TO CONFIGURE THE WALLET CREDENTIALS IN THE CONFIGURATION FILES #"
+echo "# AS WELL AS THE VERIUM ADDRESS OF THIS POOL.                                  #"
+echo "################################################################################"

@@ -1,4 +1,4 @@
-za# Verium Mining Pool Scripts
+# Verium Mining Pool Scripts
 
 This repo contains a bunch of scripts that should aid in installing a Verium
 mining pool. They are grouped together in their respective subfolders in
@@ -107,4 +107,69 @@ MPOS is the webinterface part for the mining pool. This requires some additional
 
 First run the script in `scripts/mpos/install.sh`.
 
+Finally, you need to change some values in the configuration file of MPOS. This is located at `/var/www/MPOS/include/config/global.inc.php`.
+
+The lines you need to change are the following. You need the RPC password, which is stored in `/root/veriumd_passwords.txt`.
+
+```
+$config['wallet']['password'] = 'rpcpasswordhere'; // Insert your RPC password here.
+
+$config['gettingstarted']['stratumurl'] = 'yourdomainhere.com';
+```
+
+## Mail
+
+You will need to setup your server to be able to send emails to users. In this guide we are going to use a third-party smtp server. Chances are, if you are a member of gandi.net or others, you can just use their SMTP server. This guide assumes gandi.net, since that is where I have taken out my domain name.
+
+```
+apt-get install postfix mailutils
+```
+
+When asked, select `Internet Site`, and when asked for your hostname, enter your full domain name. For example `myserver.mydomain.com`.
+
+
+Create the file `/etc/postfix/sasl_passwd`. Assuming the SMTP you can use its IP is `mail.gandi.net`, and the username for your account is `myusername@gandi.net` and `mypassword`, add this line:
+
+```
+[mail.gandi.net]:587 myusername@gadni.net:mypassword
+```
+
+after you have done that, run 
+
+```
+sudo postmap /etc/postfix/sasl_passwd
+```
+
+Note that you now have your SMTP credentials as *plain text* on your server. Secure this as much as possible.
+
+```
+sudo chown root:root /etc/postfix/sasl_passwd /etc/postfix/sasl_passwd.db
+sudo chmod 0600 /etc/postfix/sasl_passwd /etc/postfix/sasl_passwd.db
+
+```
+
+Then open up the file `/etc/postfix/main.cf` and add the following lines.
+
+```
+myhostname = myserver.mydomain.com
+relayhost = [mail.gandi.net]:587
+```
+
+After all this, you should be able to send an e-mail to yourself. Try this out:
+
+```
+echo "body of your email" | mail -s "This is a Subject" -a "From: pool@pool.com" me@me.com
+```
+
+## Cronjobs
+
+MPOS requires you to run some cronjobs. Mostly for paying out your users (important, no?), and statistics. You can just smack those into your crontab. You can edit it with `sudo crontab -e`.
+
+Add the following lines:
+
+```
+* * * * * /var/www/MPOS/cronjobs/run-statistics.sh
+* * * * * /var/www/MPOS/cronjobs/run-payout.sh 
+* * * * * /var/www/MPOS/cronjobs/run-maintenance.sh 
+```
 
