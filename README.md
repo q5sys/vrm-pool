@@ -65,7 +65,9 @@ pool.
 It requires node.js 0.10 to run, so we will be using `nvm` to install that for
 us.
 
-Run it by executing `scripts/nomp/install.sh`.
+Run it by executing `scripts/nomp/install.sh rootdbpassword`. 
+
+*The NOMP script needs root database access, so you need to pass that as a paramter to the script!*
 
 The script will install `nvm` for the `nomp` user.
 
