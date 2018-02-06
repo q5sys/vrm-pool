@@ -28,7 +28,7 @@ apt-get install software-properties-common -y
 apt-get update
 apt-get install php5.6 -y
 
-apt-get install memcached php5.6-memcached php5.6-mysqlnd php5.6-curl php5.6-json libapache2-mod-php5.6 -y
+apt-get install memcached php5.6-memcached php5.6-mysqlnd php5.6-curl php5.6-json libapache2-mod-php5.6 php5.6-mysql -y
 apache2ctl -k stop; sleep 2; sudo apache2ctl -k start
 
 ################################################################################
