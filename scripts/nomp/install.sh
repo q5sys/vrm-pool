@@ -55,7 +55,7 @@ QUERY
 # Dependencies #
 ################
 
-apt-get install redis-server -y
+apt-get install redis-server curl -y
 
 ############################
 # Install NVM for the user #
